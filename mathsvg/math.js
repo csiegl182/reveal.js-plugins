@@ -15,7 +15,7 @@
 var RevealMathSVG = window.RevealMathSVG || (function(){
 
 	var options = Reveal.getConfig().math || {};
-	options.mathjax = options.mathjax || 'https://cdn.mathjax.org/mathjax/latest/MathJax.js';
+	options.mathjax = options.mathjax || 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js';
 	options.config = options.config || 'TeX-AMS-MML_SVG';
 
 	loadScript( options.mathjax + '?config=' + options.config, function() {
@@ -27,6 +27,9 @@ var RevealMathSVG = window.RevealMathSVG || (function(){
 			},
 			skipStartupTypeset: true
 		});
+
+		// Inline SVG
+		inlineSVG();
 
 		// Typeset all math in SVGs
 		typesetMathInSVG();
@@ -42,6 +45,101 @@ var RevealMathSVG = window.RevealMathSVG || (function(){
 		} );
 
 	} );
+
+	function insertSVG(svgImage, replaceFunction) {
+		let request = new XMLHttpRequest();
+		request.open('GET', svgImage.src);
+		request.send();
+
+		request.onreadystatechange = function () {
+			if (request.readyState === 4 && request.status === 200) {
+				replaceFunction(request.responseXML, svgImage);
+			}
+		}
+	}
+
+	function checkSVG(image) {
+		imageName = image.getAttribute('src');
+		if (imageName.split('.').pop() === 'svg')
+		{
+			return true;
+		} else
+		{
+			return false;
+		}
+	}
+
+	function svgCleanTextTag(svg) {
+		svg = svg.getElementsByTagName('svg')[0];
+		let allSwitchObjs = svg.getElementsByTagName('switch');
+		for (switchObj of allSwitchObjs) {
+			let text = switchObj.getElementsByTagName('foreignObject')[0].lastElementChild.textContent.trim();
+			if (text[0] === '$' && text[text.length-1] === '$') {
+				textObj = switchObj.getElementsByTagName('text')[0];
+				textObj.textContent = text;
+			}
+		}
+
+		return svg;
+	}
+
+	function svgUpdateClipPath(svg, id) {
+		let suffix = "_"+id;
+
+		let allClipPaths = svg.getElementsByTagName('clipPath');
+		for (clipPath of allClipPaths) {
+			clipPath.id += suffix;
+		}
+
+		let allGroups = svg.getElementsByTagName('g')
+		for (group of allGroups) {
+			if (group.hasAttribute('clip-path')) {
+				let clipPath = group.getAttribute('clip-path');
+				let origPath = clipPath.substring(clipPath.indexOf('(')+1, clipPath.indexOf(')'));
+				let newClipPath = clipPath.replace(origPath, origPath+suffix);
+	
+				group.setAttribute('clip-path', newClipPath);	
+			}
+		}
+
+		return svg;
+	}
+
+	function svgUpdateImgRefs(svg, id) {
+		let suffix = "_"+id;
+
+		function appendSuffix(svg, tag, attribute, suffix) {
+			let allObjs = svg.getElementsByTagName(tag);
+			for (obj of allObjs) {
+				let attributeValue = obj.getAttribute(attribute);
+				attributeValue += suffix;
+				obj.setAttribute(attribute, attributeValue);
+			}
+		}
+
+		appendSuffix(svg, 'image', 'id', suffix);
+		appendSuffix(svg, 'use', 'xlink:href', suffix);
+
+		return svg;
+	}
+
+	function inlineSVG() {
+
+		let allImages = document.getElementsByTagName('img');
+
+		for (image of allImages) {
+			if (checkSVG(image))
+			{
+				insertSVG(image, function (svg, img) {
+					svg = svgCleanTextTag(svg);
+					svg = svgUpdateClipPath(svg, img.getAttribute('src').split('.')[0]);
+					svg = svgUpdateImgRefs(svg, img.getAttribute('src').split('.')[0]);
+		
+					img.parentElement.replaceChild(svg, img);
+				});
+			}
+		}
+	}
 
 	function loadScript( url, callback ) {
 
@@ -82,6 +180,12 @@ var RevealMathSVG = window.RevealMathSVG || (function(){
 		mathbucket.parentNode.removeChild( mathbucket );
 	}
 
+	function getFirstNumber(str) {
+		var regex = /[+-]?\d+(?:\.\d+)?/g;
+		var match = regex.exec(str);
+		return match[0];
+	}
+
 	function replaceText( svgdest, mathjaxdiv, textcontainer ) {
 		var svgmath = mathjaxdiv.getElementsByClassName( 'MathJax_SVG' )[0].getElementsByTagName( 'svg' )[0];
 		var svgmathinfo = {
@@ -90,7 +194,7 @@ var RevealMathSVG = window.RevealMathSVG || (function(){
 		};
 		// get graphics nodes
 		var gnodes = svgmath.getElementsByTagName( 'g' )[0].cloneNode( true );
-		var fontsize = svgdest.getAttribute( 'font-size' );
+		var fontsize = getFirstNumber(svgdest.getAttribute( 'font-size' ));
 		var scale = 0.0016 * fontsize;
 		var x =  +svgdest.getAttribute( 'x' );
 		if ( svgdest.hasAttribute( 'dx' ) ) x = x + svgdest.getAttribute( 'dx' );
