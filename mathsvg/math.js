@@ -18,6 +18,9 @@ var RevealMathSVG = window.RevealMathSVG || (function(){
 	options.mathjax = options.mathjax || 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js';
 	options.config = options.config || 'TeX-AMS-MML_SVG';
 
+	// Inline SVG
+	inlineSVG();
+
 	loadScript( options.mathjax + '?config=' + options.config, function() {
 		MathJax.Hub.Config({
 			messageStyle: 'none',
@@ -27,9 +30,6 @@ var RevealMathSVG = window.RevealMathSVG || (function(){
 			},
 			skipStartupTypeset: true
 		});
-
-		// Inline SVG
-		inlineSVG();
 
 		// Typeset all math in SVGs
 		typesetMathInSVG();
@@ -69,8 +69,13 @@ var RevealMathSVG = window.RevealMathSVG || (function(){
 		}
 	}
 
-	function svgCleanTextTag(svg) {
+	function separateSvgPart(svg) {
 		svg = svg.getElementsByTagName('svg')[0];
+		return svg;		
+	}
+
+	function svgCleanTextTag(svg) {
+		// svg = svg.getElementsByTagName('svg')[0];
 		let allSwitchObjs = svg.getElementsByTagName('switch');
 		for (switchObj of allSwitchObjs) {
 			let text = switchObj.getElementsByTagName('foreignObject')[0].lastElementChild.textContent.trim();
@@ -118,6 +123,7 @@ var RevealMathSVG = window.RevealMathSVG || (function(){
 		}
 
 		appendSuffix(svg, 'image', 'id', suffix);
+		appendSuffix(svg, 'path', 'id', suffix);
 		appendSuffix(svg, 'use', 'xlink:href', suffix);
 
 		return svg;
@@ -131,9 +137,13 @@ var RevealMathSVG = window.RevealMathSVG || (function(){
 			if (checkSVG(image))
 			{
 				insertSVG(image, function (svg, img) {
+					let img_name = img.getAttribute('src').split('.')[0];
+					img_name = img_name.replace("/", "_");
+
+					svg = separateSvgPart(svg);
 					svg = svgCleanTextTag(svg);
-					svg = svgUpdateClipPath(svg, img.getAttribute('src').split('.')[0]);
-					svg = svgUpdateImgRefs(svg, img.getAttribute('src').split('.')[0]);
+					svg = svgUpdateClipPath(svg, img_name);
+					svg = svgUpdateImgRefs(svg, img_name);
 		
 					img.parentElement.replaceChild(svg, img);
 				});
@@ -183,7 +193,30 @@ var RevealMathSVG = window.RevealMathSVG || (function(){
 	function getFirstNumber(str) {
 		var regex = /[+-]?\d+(?:\.\d+)?/g;
 		var match = regex.exec(str);
-		return match[0];
+		var number;
+		try {
+			number = match[0];
+		} catch (TypeError) {
+			number = null;
+		}
+		return number;
+	}
+
+	function getFontSize(tag) {
+		var fontsize = getFirstNumber(tag.getAttribute( 'font-size' ));
+
+		if (fontsize === null) {
+			styles = tag.getAttribute('style').split(";");
+			for (style_value of styles) {
+				var key_value = style_value.split(":");
+				if (key_value[0] === "font-size") {
+					fontsize = getFirstNumber(key_value[1]);
+					break;
+				}
+			}
+		}
+
+		return fontsize;
 	}
 
 	function replaceText( svgdest, mathjaxdiv, textcontainer ) {
@@ -194,7 +227,7 @@ var RevealMathSVG = window.RevealMathSVG || (function(){
 		};
 		// get graphics nodes
 		var gnodes = svgmath.getElementsByTagName( 'g' )[0].cloneNode( true );
-		var fontsize = getFirstNumber(svgdest.getAttribute( 'font-size' ));
+		var fontsize = getFontSize(svgdest);
 		var scale = 0.0016 * fontsize;
 		var x =  +svgdest.getAttribute( 'x' );
 		if ( svgdest.hasAttribute( 'dx' ) ) x = x + svgdest.getAttribute( 'dx' );
